@@ -1,0 +1,19 @@
+[toolchain]
+anchor_version = "0.32.1"
+
+[features]
+seeds = false
+skip-lint = false
+
+[programs.localnet]
+held = "6eCgrBQEMM3oo4AgvvvXwiEkd7zFKVQF983HwpwCZLDU"
+
+[programs.devnet]
+held = "6eCgrBQEMM3oo4AgvvvXwiEkd7zFKVQF983HwpwCZLDU"
+
+[provider]
+cluster = "Devnet"
+wallet = "~/.config/solana-held/deployer.json"
+
+[scripts]
+test = "cargo test -p held --lib"

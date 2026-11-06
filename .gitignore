@@ -1,0 +1,16 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+/target/
+/programs/held/target/
+/web/node_modules/
+/web/.next/
+/web/.env.local
+/web/next-env.d.ts
+/web/tsconfig.tsbuildinfo
+
+.neon
+node_modules/
+.next/
