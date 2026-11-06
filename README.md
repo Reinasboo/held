@@ -21,6 +21,18 @@ The sample event is explicitly a preview. The Devnet HELD program and supported 
 
 The current UI includes event publishing, attendee reservation/refund actions, QR passes, organizer scanning/check-in, event cancellation, dispute-to-refund handling, undisputed no-show settlement to the event organizer after the dispute window, RPC-backed registration transaction links, and organizer settlement reports.
 
+## Vercel deployment
+
+The Next.js app is deployed from `web/` to the Vercel project `heldevents`. Use the Vercel CLI with the approved account:
+
+```powershell
+Set-Location web
+vercel link --yes --project heldevents
+vercel deploy --prod --project heldevents --yes --verify
+```
+
+The project is configured for Node.js 24 and the public Devnet program, USDC mint, and RPC endpoint. The local `.env.local` and generated build files are excluded from deployment. Server-only Neon and Object Storage credentials, plus optional notification/email settings, must be configured in Vercel before their corresponding API routes can operate; do not commit or upload local secret files.
+
 ## Solana program
 
 The configured HELD program ID is `6eCgrBQEMM3oo4AgvvvXwiEkd7zFKVQF983HwpwCZLDU`, and the Anchor provider targets Devnet. The repository provides `anchor-docker.ps1` to run the pinned Anchor 0.32.1 toolchain through Docker Desktop:
