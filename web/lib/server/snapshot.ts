@@ -24,7 +24,7 @@ export function eventSnapshotRow(event: EventAccount) {
     cancellation_deadline: event.cancellationDeadline.toString(),
     check_in_start_at: event.checkInStartAt.toString(),
     check_in_end_at: event.checkInEndAt.toString(),
-    dispute_window_seconds: event.disputeWindowSeconds.toString(),
+    dispute_window_seconds: event.legacyDisputeWindowSeconds.toString(),
     policy_hash: bytesToHex(event.policyHash),
     status: event.status,
     synced_at: new Date().toISOString(),

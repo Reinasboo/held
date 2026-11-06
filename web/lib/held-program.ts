@@ -38,8 +38,7 @@ const IX = {
   checkIn: [149, 45, 160, 150, 236, 156, 168, 14],
   refund: [127, 171, 91, 29, 143, 55, 70, 98],
   cancelEvent: [55, 143, 36, 45, 59, 241, 89, 119],
-  dispute: [240, 177, 52, 245, 237, 170, 17, 233],
-  resolveDispute: [231, 6, 202, 6, 96, 103, 12, 230],
+  refundNoShow: [83, 21, 254, 51, 123, 143, 30, 125],
   finalizeNoShow: [246, 224, 115, 223, 47, 71, 68, 116],
   withdrawEligibleFunds: [125, 209, 36, 132, 152, 88, 148, 105],
 } as const;
@@ -67,7 +66,7 @@ export type EventAccount = {
   cancellationDeadline: bigint;
   checkInStartAt: bigint;
   checkInEndAt: bigint;
-  disputeWindowSeconds: bigint;
+  legacyDisputeWindowSeconds: bigint;
   policyHash: Uint8Array;
   status: "active" | "cancelled";
 };
@@ -101,7 +100,6 @@ export type NewEventInput = {
   cancellationDeadline: bigint;
   checkInStartAt: bigint;
   checkInEndAt: bigint;
-  disputeWindowSeconds: bigint;
 };
 
 export function getProgramAddress(): Address {
@@ -210,7 +208,7 @@ export async function createEventInstruction(
   const policyHash = await hashBytes(
     encoder.encode(
       JSON.stringify({
-        version: 2,
+        version: 3,
         mint,
         depositAmount: input.depositAmount.toString(),
         eventStartAt: input.eventStartAt.toString(),
@@ -218,12 +216,10 @@ export async function createEventInstruction(
         cancellationDeadline: input.cancellationDeadline.toString(),
         checkInStartAt: input.checkInStartAt.toString(),
         checkInEndAt: input.checkInEndAt.toString(),
-        disputeWindowSeconds: input.disputeWindowSeconds.toString(),
-        noShowDisputeWindowStartsAt: "no_show_recorded_at",
         attendanceRefund: "full",
         timelyCancellationRefund: "full",
         organizerCancellationRefund: "full",
-        noShowDisposition: "pay_organizer_after_dispute_window",
+        noShowDisposition: "organizer_decides_refund_or_payout_after_no_show",
       }),
     ),
   );
@@ -243,7 +239,7 @@ export async function createEventInstruction(
   writer.i64(input.cancellationDeadline);
   writer.i64(input.checkInStartAt);
   writer.i64(input.checkInEndAt);
-  writer.i64(input.disputeWindowSeconds);
+  writer.i64(0n);
   writer.bytes(policyHash);
 
   return {
@@ -456,7 +452,7 @@ export function refundInstruction(
   );
 }
 
-export function resolveDisputeInstruction(
+export function refundNoShowInstruction(
   programId: Address,
   client: AppClient,
   event: EventAccount,
@@ -469,16 +465,8 @@ export function resolveDisputeInstruction(
     event,
     registration,
     organizer,
-    "resolveDispute",
+    "refundNoShow",
   );
-}
-
-export function disputeInstruction(
-  programId: Address,
-  event: EventAccount,
-  attendee: Address,
-): Promise<Instruction> {
-  return eventInstruction(programId, event, attendee);
 }
 
 export function finalizeNoShowInstruction(
@@ -539,34 +527,13 @@ export async function withdrawEligibleFundsInstructions(
   }];
 }
 
-async function eventInstruction(
-  programId: Address,
-  event: EventAccount,
-  actor: Address,
-): Promise<Instruction> {
-  const registration = await deriveRegistrationAddress(
-    programId,
-    event.address,
-    actor,
-  );
-  return {
-    programAddress: programId,
-    accounts: [
-      { address: actor, role: AccountRole.READONLY_SIGNER },
-      { address: event.address, role: AccountRole.READONLY },
-      { address: registration, role: AccountRole.WRITABLE },
-    ],
-    data: Uint8Array.from(IX.dispute),
-  };
-}
-
 async function refundLikeInstructions(
   programId: Address,
   client: AppClient,
   event: EventAccount,
   registration: RegistrationAccount,
   caller: Address,
-  instructionName: "refund" | "resolveDispute",
+  instructionName: "refund" | "refundNoShow",
 ): Promise<Instruction[]> {
   const mint = getUsdcMintAddress();
   const vault = await deriveVaultAddress(programId, registration.address);
@@ -873,7 +840,7 @@ function decodeEventAccount(
   const cancellationDeadline = reader.i64();
   const checkInStartAt = reader.i64();
   const checkInEndAt = reader.i64();
-  const disputeWindowSeconds = reader.i64();
+  const legacyDisputeWindowSeconds = reader.i64();
   const policyHash = reader.bytes(32);
   const statusValue = reader.u8();
   if (statusValue > 1) throw new Error("Event account has an unknown status.");
@@ -897,7 +864,7 @@ function decodeEventAccount(
     cancellationDeadline,
     checkInStartAt,
     checkInEndAt,
-    disputeWindowSeconds,
+    legacyDisputeWindowSeconds,
     policyHash,
     status: statusValue === 0 ? "active" : "cancelled",
   };
@@ -985,10 +952,9 @@ async function validateNewEventInput(input: NewEventInput): Promise<void> {
     input.checkInStartAt > input.eventStartAt ||
     input.eventStartAt >= input.checkInEndAt ||
     input.cancellationDeadline < input.registrationOpenAt ||
-    input.cancellationDeadline > input.checkInStartAt ||
-    input.disputeWindowSeconds <= 0n
+    input.cancellationDeadline > input.checkInStartAt
   ) {
-    throw new Error("The event schedule or cancellation/dispute deadlines are inconsistent.");
+    throw new Error("The event schedule or cancellation deadline is inconsistent.");
   }
 }
 

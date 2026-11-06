@@ -159,7 +159,7 @@ function EventCard({
         </div>
         <div className="card-bottom">
           <div>
-            <span className="deposit-caption">REFUNDABLE COMMITMENT</span>
+            <span className="deposit-caption">USDC SHOW-UP DEPOSIT</span>
             <strong>{eventPreview.deposit} <small>USDC</small></strong>
           </div>
           <button className="circle-arrow" onClick={onOpen} aria-label="View event details">
@@ -202,7 +202,7 @@ function OnChainEventCard({
           <div className="event-detail-line"><span className="detail-icon">◷</span><span>{date} · {event.timeZone}</span></div>
           <div className="event-detail-line"><span className="detail-icon">⌖</span><span>{event.location}</span></div>
           <div className="card-bottom">
-            <div><span className="deposit-caption">REFUNDABLE COMMITMENT</span><strong>{formatUsdc(event.depositAmount)} <small>USDC</small></strong></div>
+            <div><span className="deposit-caption">USDC SHOW-UP DEPOSIT</span><strong>{formatUsdc(event.depositAmount)} <small>USDC</small></strong></div>
             <span className="circle-arrow" aria-hidden="true">→</span>
           </div>
         </div>
@@ -338,9 +338,9 @@ export function HeldApp() {
     <main>
       <div className="announcement">
         <span className="announcement-dot" />
-        HELD IS IN DEVELOPMENT
+        DEVNET PREVIEW
         <span className="announcement-separator">·</span>
-        Devnet preview. No real funds.
+        Test tokens only. No real-world value.
         <span className="announcement-arrow">↗</span>
       </div>
       <header className="site-header">
@@ -348,7 +348,7 @@ export function HeldApp() {
           held<span>.</span>
         </button>
         <nav className="main-nav" aria-label="Main navigation">
-          <button className={view === "events" ? "nav-link active" : "nav-link"} onClick={() => navigate("events")}>Find a place</button>
+          <button className={view === "events" ? "nav-link active" : "nav-link"} onClick={() => navigate("events")}>Find events</button>
           <button className={view === "reservations" ? "nav-link active" : "nav-link"} onClick={() => navigate("reservations")}>Your reservations</button>
           <button className={view === "organize" ? "nav-link active" : "nav-link"} onClick={() => navigate("organize")}>For organizers</button>
         </nav>
@@ -375,40 +375,58 @@ export function HeldApp() {
           <>
             <section className="hero">
               <div className="hero-copy">
-                <p className="eyebrow"><span className="eyebrow-line" /> A LITTLE MORE CERTAINTY</p>
-                <h1>Your place is<br />reserved<span>.</span></h1>
+                <p className="eyebrow"><span className="eyebrow-line" /> GOOD PLANS. BETTER FOLLOW-THROUGH.</p>
+                <h1>Your place is<br />held<span>.</span></h1>
                 <p className="hero-description">
-                  Your money comes back<br className="desktop-break" /> when you show up.
+                  Put down a small USDC deposit to save your spot. Show up or cancel by the deadline and get it back.
                 </p>
                 <button className="text-link" onClick={() => navigate("organize")}>
-                  A better way to bring people together <span>↗</span>
+                  Hosting? Set the terms. <span>↗</span>
                 </button>
               </div>
               <div className="hero-aside">
                 <div className="hero-mark">h<span>.</span></div>
                 <div className="hero-note">
                   <span className="note-line" />
-                  <p>Good plans deserve<br />a place to land.</p>
+                  <p>Good plans. Fewer<br />empty chairs.</p>
                 </div>
               </div>
               <div className="hero-index">01 — 03</div>
             </section>
+            <section className="homepage-policy" aria-label="How the deposit works">
+              <div>
+                <strong>Show up</strong>
+                <span>The organizer checks you in. Your deposit comes back.</span>
+              </div>
+              <div>
+                <strong>Plans change?</strong>
+                <span>Cancel before the deadline for a full refund.</span>
+              </div>
+              <div>
+                <strong>Miss the event?</strong>
+                <span>The organizer gets your deposit—or can choose to refund you.</span>
+              </div>
+              <div>
+                <strong>Organizer cancels?</strong>
+                <span>You get a full refund. No hard feelings.</span>
+              </div>
+            </section>
             <section className="events-section" aria-labelledby="events-title">
               <div className="section-heading compact">
                 <div>
-                  <p className="eyebrow">MAKE A PLAN. KEEP A PLACE.</p>
-                  <h2 id="events-title">Places worth showing up for.</h2>
+                  <p className="eyebrow">YOUR NEXT YES STARTS HERE</p>
+                  <h2 id="events-title">Find your next good plan.</h2>
                 </div>
                 <button className="filter-button" disabled>All events <span>⌄</span></button>
               </div>
-              {!configured && <div className="preview-banner"><span className="preview-banner-icon">i</span>Sample event for product preview. Reservations are not enabled yet.</div>}
+              {!configured && <div className="preview-banner"><span className="preview-banner-icon">i</span>Preview only: this sample isn’t reservable. Live events use Devnet test USDC with no real-world value.</div>}
               {eventsLoading && configured && <p className="state-panel">Loading active events from Solana Devnet…</p>}
               {eventsError && <p className="transaction-error" role="alert">{eventsError}</p>}
               <div className="event-grid">
                 {!configured && <EventCard onOpen={openPreview} />}
                 {configured && events.map((event) => <OnChainEventCard key={event.address} event={event} onOpen={openEvent} />)}
                 {configured && !eventsLoading && !eventsError && events.length === 0 && (
-                  <div className="no-events-panel"><h3>No live events yet.</h3><p>Be the first to publish a place worth showing up for.</p><button className="text-link" onClick={() => navigate("organize")}>Create an event ↗</button></div>
+                  <div className="no-events-panel"><h3>The calendar’s looking a little lonely.</h3><p>Be the first to post a plan worth showing up for.</p><button className="text-link" onClick={() => navigate("organize")}>Host the first one ↗</button></div>
                 )}
                 {!configured && <div className="coming-card"><div className="coming-art"><span>More good things<br />are on their way.</span></div><p>Independent organizers.<br />A little more certainty.</p><span className="coming-soon">COMING SOON</span></div>}
               </div>
@@ -421,7 +439,7 @@ export function HeldApp() {
 
       <footer className="site-footer">
         <button className="wordmark footer-mark" onClick={() => navigate("events")}>held<span>.</span></button>
-        <p>Your place is reserved. Your money comes back when you show up.</p>
+        <p>Clear terms. Better RSVPs. Your deposit back when you show up.</p>
         <span>BUILT ON SOLANA · DEVNET PREVIEW</span>
       </footer>
     </main>

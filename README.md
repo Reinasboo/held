@@ -19,7 +19,7 @@ npm run dev
 
 The sample event is explicitly a preview. The Devnet HELD program and supported Devnet USDC mint are configured in `web/.env.local`; the public values are also shown in `web/.env.example`. The app reads active events and attendee/organizer account state directly from Solana Devnet. Published event links use `/?event=<event-address>`. Do not enter real funds or treat preview content as a live event.
 
-The current UI includes event publishing, attendee reservation/refund actions, QR passes, organizer scanning/check-in, event cancellation, dispute-to-refund handling, undisputed no-show settlement to the event organizer after the dispute window, RPC-backed registration transaction links, and organizer settlement reports.
+The current UI includes event publishing, attendee reservation/refund actions, QR passes, organizer scanning/check-in, event cancellation, organizer-controlled no-show refunds or payouts, RPC-backed registration transaction links, and organizer settlement reports.
 
 ## Vercel deployment
 
@@ -33,7 +33,7 @@ vercel deploy --prod --project heldevents --yes --verify
 
 The project is configured for Node.js 24 and the public Devnet program, USDC mint, and RPC endpoint. The local `.env.local` and generated build files are excluded from deployment. Server-only Neon and Object Storage credentials, plus optional notification/email settings, must be configured in Vercel before their corresponding API routes can operate; do not commit or upload local secret files.
 
-The production deployment is live at [https://heldevents.vercel.app](https://heldevents.vercel.app). Its public page was verified to return HTTP 200. Only the public Devnet settings are configured in Vercel; Neon database, Realtime, Object Storage, and notification/email credentials were not uploaded, so the server features that depend on them remain unconfigured.
+The production deployment is live at [https://heldevents.vercel.app](https://heldevents.vercel.app). Its public page was verified to return HTTP 200. Only the public Devnet settings are configured in Vercel; Neon database, Realtime, Object Storage, and notification/email credentials were not uploaded, so the server features that depend on them remain unconfigured. The live deployment still has the previous no-show dispute-window behavior until the program upgrade and matching frontend are deployed.
 
 ## Solana program
 
@@ -49,9 +49,9 @@ The Docker wrapper reads the Devnet fee payer from `%USERPROFILE%\.config\solana
 
 The initial upgradeable Devnet deployment is finalized at program ID `6eCgrBQEMM3oo4AgvvvXwiEkd7zFKVQF983HwpwCZLDU` (transaction `5ccdKd7fP1rNmfsPKzpvJnmVdvtVsZgErXJMYx3VUeAW6mtUznEQ1mchnkRzEtBT6Znr3fPrx5fUcxRAuX5EfsdS`). The upgrade authority is the fee-payer wallet. Verify the deployment with `solana program show 6eCgrBQEMM3oo4AgvvvXwiEkd7zFKVQF983HwpwCZLDU --url devnet`; run local program tests with `cargo test -p held --lib`.
 
-Post-deployment verification: the finalized Devnet ProgramData contains the same 415,112-byte executable as `target/deploy/held.so` (SHA-256 `4FE0591A58240B9B18F4F1408350FDC8CA86F3B440EBAE855CB5B36DFC90A19F`). The web production build, lint, TypeScript check, production HTTP smoke test, and all 7 Rust unit tests pass. The attendee test wallet has 20 Devnet USDC and the organizer fee payer has approximately 2.887 SOL. No HELD event accounts exist on Devnet yet, so the transaction lifecycle has not been exercised against the deployed program. Creating an event allocates a public on-chain account and currently requires 0.00610616 SOL in rent plus the transaction fee.
+Post-deployment verification: the finalized Devnet ProgramData contains the same 415,112-byte executable as `target/deploy/held.so` (SHA-256 `4FE0591A58240B9B18F4F1408350FDC8CA86F3B440EBAE855CB5B36DFC90A19F`). Before the no-show policy change, the web production build, lint, TypeScript check, production HTTP smoke test, and all 7 Rust unit tests passed. The attendee test wallet has 20 Devnet USDC and the organizer fee payer has approximately 2.887 SOL. No HELD event accounts exist on Devnet yet, so the transaction lifecycle has not been exercised against the deployed program. Creating an event allocates a public on-chain account and currently requires 0.00610616 SOL in rent plus the transaction fee.
 
-The selected no-show policy is: once the organizer records a no-show, the attendee has the event's disclosed dispute window to dispute it. An undisputed deposit can then be paid to the event organizer. A disputed deposit remains locked until the organizer resolves it with a full attendee refund. Cancelling an event makes every held deposit refundable and prevents no-show settlement. These terms are included in the on-chain policy hash and shown before reservation.
+The selected no-show policy is: after check-in closes, only the event organizer can record a no-show. The attendee forfeits the deposit to the organizer, who may instead choose to issue a full refund. There is no attendee dispute action or dispute window. Cancelling an event makes every held deposit refundable and prevents no-show payout. These terms are included in the event policy hash and shown before reservation. The source change is not yet deployed; the live program and frontend continue to use the previous dispute-window policy until a separately approved program upgrade and subsequent Vercel deployment.
 
 ## Neon indexing and email notifications
 

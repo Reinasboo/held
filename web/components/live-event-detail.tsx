@@ -173,7 +173,7 @@ export function LiveEventDetail({
       );
       await approval.prepare(
         "Reserve this place?",
-        `${formatUsdc(event.depositAmount)} USDC will be held in this registration's escrow. It will be refunded after authorized check-in, organizer cancellation, or cancellation by ${formatDeadline(event.cancellationDeadline, event.timeZone)}. If a no-show is recorded, you have ${Number(event.disputeWindowSeconds / 3600n)} hours to dispute it; an undisputed deposit is then paid to the event organizer.`,
+        `${formatUsdc(event.depositAmount)} USDC will be held in this registration's escrow. It will be refunded after authorized check-in, organizer cancellation, or cancellation by ${formatDeadline(event.cancellationDeadline, event.timeZone)}. If you miss the event, you forfeit the deposit to the organizer unless the organizer chooses to refund you.`,
         instructions,
         (signature) => {
           setReservationConfirmed(true);
@@ -276,7 +276,7 @@ export function LiveEventDetail({
               </div>
               <div>
                 <span>!</span>
-                <p><strong>No-show: dispute, then organizer settlement</strong><br />Once a no-show is recorded, you have {Number(event.disputeWindowSeconds / 3600n)} hours to dispute it. An undisputed deposit is then paid to the event organizer. Disputed deposits remain locked until resolved to a full refund.</p>
+                <p><strong>Missed event: deposit goes to the organizer</strong><br />If you miss the event, your deposit is forfeited to the organizer. The organizer may choose to issue you a full refund instead.</p>
               </div>
             </div>
             <div className="policy-note">
@@ -299,7 +299,7 @@ export function LiveEventDetail({
                 checked={termsAcceptedFor === event.address}
                 onChange={(change) => setTermsAcceptedFor(change.target.checked ? event.address : null)}
               />
-              <span>I understand the deposit, cancellation deadline, check-in, and no-show dispute and settlement policy.</span>
+              <span>I understand the deposit, cancellation deadline, check-in, and no-show forfeiture policy.</span>
             </label>
             <label className="form-field notification-email">
               Email for optional event updates

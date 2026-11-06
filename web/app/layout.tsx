@@ -3,9 +3,9 @@ import { Providers } from "@/components/providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "HELD — Your place is reserved",
+  title: "HELD — Your place is held",
   description:
-    "A fair, transparent commitment layer for events. Show up and your refundable deposit comes back.",
+    "Reserve a spot with a USDC deposit. Show up or cancel by the deadline for a refund. Miss the event and the organizer keeps the deposit, unless they refund you.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

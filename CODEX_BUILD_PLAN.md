@@ -22,7 +22,7 @@ The attendee must understand the deposit and refund conditions before signing. T
 
 ### Attendee journey
 
-1. Open a shareable event link. Show the event name, description, date/time and time zone, location, organizer, remaining capacity, exact deposit asset and amount, cancellation deadline, check-in window, and no-show/dispute policy before connecting a wallet or requesting payment.
+1. Open a shareable event link. Show the event name, description, date/time and time zone, location, organizer, remaining capacity, exact deposit asset and amount, cancellation deadline, check-in window, and no-show forfeiture/refund policy before connecting a wallet or requesting payment.
 2. Connect a Solana Wallet Standard-compatible wallet (Phantom is an example). Support USDC on Devnet for the hackathon. Display the exact transaction and its pending, confirmed, failed, or expired status.
 3. After the on-chain reservation is confirmed, show a confirmed reservation, unique registration reference, digital QR pass, and deposit status. Provide a reservation dashboard with upcoming events, cancellation eligibility, pass, and transaction history.
 4. Allow cancellation before the published deadline with a full refund. Explain and reject cancellation after the deadline according to the policy.
@@ -30,9 +30,9 @@ The attendee must understand the deposit and refund conditions before signing. T
 
 ### Organizer journey
 
-1. Connect the organizer wallet and create an event with name, description, date/time, venue/location, capacity, registration open/close dates, deposit amount, cancellation deadline, check-in window, no-show policy, and dispute window.
+1. Connect the organizer wallet and create an event with name, description, date/time, venue/location, capacity, registration open/close dates, deposit amount, cancellation deadline, check-in window, and no-show policy.
 2. Publish an event page and shareable link. Display terms in attendee-facing views before commitment. Record a policy version or hash with each reservation so later edits cannot silently change accepted terms.
-3. View registrations, remaining capacity, deposits held, cancellations, attendance/check-in progress, pending disputes, refund status, and final settlement.
+3. View registrations, remaining capacity, deposits held, cancellations, attendance/check-in progress, pending no-show decisions, refund status, and final settlement.
 4. Scan QR passes with the organizer check-in interface. Reject invalid, wrong-event, expired, unauthorized, and duplicate scans without moving funds.
 5. Cancel an event and return every affected attendee’s full deposit. Provide a settlement report with verifiable transaction links.
 
@@ -43,7 +43,7 @@ The attendee must understand the deposit and refund conditions before signing. T
 - **Simplicity:** keep blockchain mechanics out of the way; explain wallet approval and transaction status in plain language.
 - **Reliability:** handle confirmation delays, failed transactions, retries, and recovery without showing success prematurely.
 - **Organizer independence:** provide a shareable HELD link that can accompany an existing Luma, Eventbrite, Meetup, Partiful, or other event workflow; do not require platform migration.
-- **Trust:** restrict check-in authority, preserve evidence, and offer a defined dispute path.
+- **Trust:** restrict check-in authority, preserve evidence, and disclose that no-show records and refunds are controlled by the organizer.
 - HELD revenue must not depend on attendees failing to attend. Do not describe the product as unprecedented; Jamao already operates in the refundable event-deposit category. Differentiate through platform independence, transparent on-chain settlement, and execution.
 
 ## MVP scope and explicit deferrals
@@ -53,7 +53,7 @@ The attendee must understand the deposit and refund conditions before signing. T
 - Responsive consumer and organizer web application.
 - Event creation, configuration, publication, capacity enforcement, and shareable event page.
 - Solana wallet connection and USDC Devnet deposits.
-- Anchor/Rust program with event and registration state, program-controlled token escrow, cancellation, event cancellation, authorized check-in, refund, dispute/no-show transitions, and safe settlement.
+- Anchor/Rust program with event and registration state, program-controlled token escrow, cancellation, event cancellation, authorized check-in, refund, no-show, and safe settlement transitions.
 - QR pass creation and organizer scanner with duplicate-scan protection.
 - Backend persistence/indexing for event metadata and dashboards, with reconciliation against chain state.
 - Confirmation/refund notifications, transaction status, Explorer links, and event settlement reporting.
@@ -93,8 +93,8 @@ Design account layouts, PDA seeds, token-account ownership, and instruction auth
 
 ### Suggested accounts
 
-- **Event:** organizer authority, unique event identifier, event status, capacity and confirmed count, deposit amount/mint, registration deadlines, cancellation deadline, check-in window, no-show/dispute policy, policy version/hash, and relevant settlement configuration.
-- **Registration:** event reference, attendee wallet, exact deposit amount/mint, reservation/attendance/refund state, accepted policy version/hash, credential hash/reference, check-in timestamp and authority, dispute state/deadline, and settlement guard.
+- **Event:** organizer authority, unique event identifier, event status, capacity and confirmed count, deposit amount/mint, registration deadlines, cancellation deadline, check-in window, no-show forfeiture/refund policy, and policy version/hash.
+- **Registration:** event reference, attendee wallet, exact deposit amount/mint, reservation/attendance/refund state, accepted policy version/hash, credential hash/reference, check-in timestamp and authority, no-show timestamp, and settlement guard.
 - **Escrow vault:** registration-specific token account or equivalent isolated accounting controlled by a program PDA.
 
 Keep layouts within Solana account-size limits and use checked arithmetic. Make PDA derivation and account constraints explicit and test them.
@@ -110,21 +110,20 @@ Implement and test the equivalent of:
 5. `check_in_attendee`
 6. `refund_attendee`
 7. `cancel_event`
-8. `resolve_dispute`
+8. `refund_no_show` (organizer-authorized)
 9. `finalize_no_show`
-10. `withdraw_eligible_funds` only for an explicitly disclosed, authorized final disposition
+10. `withdraw_eligible_funds` for the organizer's explicitly disclosed no-show payout
 
 Names may follow existing conventions, but all financial transitions and their authorization must be equivalent. Enforce capacity on-chain in the same atomic reservation operation that accepts a deposit. Validate event status, dates, mint, token program, source/destination token accounts, signer ownership, authority, amount, and current state on every relevant instruction.
 
 ### State and invariants
 
-Represent reservation, attendance, and financial settlement as explicit, guarded state (separate enums/fields are preferable to an ambiguous single status). Support the vision’s lifecycle concepts: `CREATED`, `DEPOSITED`, `CONFIRMED`, `CANCELLED`, `CHECKED_IN`, `REFUND_PENDING`, `REFUNDED`, `NO_SHOW_PENDING`, `DISPUTED`, and `SETTLED`.
+Represent reservation, attendance, and financial settlement as explicit, guarded state (separate enums/fields are preferable to an ambiguous single status). Support the vision’s lifecycle concepts: `CREATED`, `DEPOSITED`, `CONFIRMED`, `CANCELLED`, `CHECKED_IN`, `REFUND_PENDING`, `REFUNDED`, `NO_SHOW_PENDING`, and `SETTLED`.
 
 - A reservation is confirmed only after the deposit transaction is confirmed and the program records the deposit.
 - Successful check-in is an attendance attestation by an authorized organizer/scanner, not independent proof of physical presence. Record who attested and when.
 - A valid check-in entitles the attendee to a full refund. Cancellation before the published deadline and organizer cancellation also entitle the attendee to a full refund.
-- Do not finalize a no-show immediately. Keep it provisional through the disclosed dispute window. A dispute locks the funds until the authorized resolution path completes.
-- **Selected no-show policy:** after the organizer records a no-show, the attendee has the event's disclosed dispute window to dispute it. An undisputed deposit is then paid to the event organizer; a disputed deposit remains locked until the organizer resolves it with a full attendee refund. Event cancellation disables this settlement and makes held deposits refundable. This recipient and timing must be disclosed before registration and enforced on-chain.
+- **Selected no-show policy:** after the check-in window closes, only the event organizer may record a no-show. The attendee forfeits the deposit to the organizer; the organizer may instead choose to issue a full refund. There is no attendee dispute action or dispute window. Organizer event cancellation disables no-show payout and makes held deposits refundable. Disclose this policy before registration and enforce both organizer choices on-chain.
 - A refund or settlement can move the vault’s funds at most once. Duplicate requests must be rejected safely (or return an explicitly documented idempotent result) without a second transfer.
 - Organizer cancellation always produces full refunds. Ensure every affected registration can be refunded and the organizer cannot withdraw those funds.
 - Reject invalid transitions, unauthorized check-ins/settlements, duplicate registration/check-in, expired credentials, and mismatched event or wallet.
@@ -161,8 +160,8 @@ Include loading, empty, disconnected-wallet, rejected-signature, insufficient-US
 
 ### Phase 1 — Domain rules, data model, and UI skeleton
 
-- Define event, policy, reservation, attendance, dispute, and settlement types; document valid transitions.
-- Define chain/off-chain ownership of each field, event-policy versioning, QR credential validation, and the explicit no-show policy: organizer payout only after the recorded no-show's dispute deadline.
+- Define event, policy, reservation, attendance, and settlement types; document valid transitions.
+- Define chain/off-chain ownership of each field, event-policy versioning, QR credential validation, and the explicit no-show policy: organizer chooses payout or full refund after the organizer records a no-show.
 - Scaffold the attendee and organizer routes and responsive design system with realistic empty/loading/error states.
 
 **Exit:** every MVP field and state has an owner; users can navigate the main flows without misleading success states.
@@ -170,7 +169,7 @@ Include loading, empty, disconnected-wallet, rejected-signature, insufficient-US
 ### Phase 2 — Anchor program and tests
 
 - Implement accounts, PDAs, escrow, instructions, authorization, deadlines, capacity, and state guards.
-- Add Anchor tests for successful deposit/refund/cancellation/event cancellation/check-in, and for unauthorized signers, full capacity/racing reservations, wrong mint/amount/event, premature/late action, duplicate action, invalid transition, and disputes/no-show settlement.
+- Add Anchor tests for successful deposit/refund/cancellation/event cancellation/check-in, and for unauthorized signers, full capacity/racing reservations, wrong mint/amount/event, premature/late action, duplicate action, invalid transition, disabled attendee disputes, organizer no-show refund, and immediate organizer payout.
 - Verify token accounting and that funds cannot be withdrawn or cross-used contrary to policy.
 
 **Exit:** program tests demonstrate all financial invariants locally; no mainnet deployment.
@@ -186,7 +185,7 @@ Include loading, empty, disconnected-wallet, rejected-signature, insufficient-US
 ### Phase 4 — Organizer, check-in, settlement, and backend
 
 - Implement event creation/publication and organizer dashboard.
-- Add authorized scanner flow and on-chain check-in, duplicate prevention, cancellation, disputes, and disclosed no-show resolution.
+- Add authorized scanner flow and on-chain check-in, duplicate prevention, cancellation, and disclosed organizer-controlled no-show refund or payout.
 - Add Neon/PostgreSQL schema and idempotent transaction indexing/reconciliation. Add Resend notifications with observable delivery failures and retry handling.
 - Add organizer-authorized event-cover uploads and Neon Realtime dashboard subscriptions that refresh authoritative state from Solana.
 
@@ -195,7 +194,7 @@ Include loading, empty, disconnected-wallet, rejected-signature, insufficient-US
 ### Phase 5 — End-to-end hardening and demo
 
 - Exercise the full lifecycle on Devnet using real configured Devnet USDC.
-- Test wallet rejection, insufficient balance, transaction failure/timeout/retry, duplicate scan, invalid QR, event-capacity race, cancellation before/after deadline, organizer cancellation, disputed check-in, and refund recovery.
+- Test wallet rejection, insufficient balance, transaction failure/timeout/retry, duplicate scan, invalid QR, event-capacity race, cancellation before/after deadline, organizer cancellation, unauthorized no-show actions, organizer no-show refund/payout, and refund recovery.
 - Verify all displayed transaction links and amounts against the relevant Devnet accounts/transactions.
 - Record only actual demo metrics (events, reservations, commitment value, successful check-ins, refunds, attendance rate, failures, duplicate attempts rejected, and check-in-to-refund confirmation time).
 
@@ -212,12 +211,12 @@ Only begin after Phase 5 passes. Isolate the integration, track actual source an
 The MVP is complete only when all of the following hold:
 
 - An organizer can create and publish a capacity-limited event with all financial terms.
-- An attendee sees the USDC amount, cancellation deadline, check-in/no-show policy, and dispute window before authorizing a deposit.
+- An attendee sees the USDC amount, cancellation deadline, check-in/no-show forfeiture policy, and organizer refund discretion before authorizing a deposit.
 - A confirmed reservation corresponds to an actual confirmed Devnet deposit; the vault and registration can be inspected on-chain.
 - The program enforces capacity, correct attendee/organizer authorization, event windows, accepted policy version, and valid transitions.
 - A timely attendee cancellation, organizer event cancellation, and successful authorized check-in each make a full refund available exactly once.
 - A check-in requires an authorized scanner and valid event registration; an invalid or repeated scan cannot trigger another refund.
-- A no-show is provisional until the disclosed dispute period expires; a disputed deposit remains locked until an authorized resolution.
+- Only the organizer can record a no-show and choose a full refund or payout; an attendee cannot dispute or redirect settlement.
 - Failed or pending transactions are accurately represented; retries do not duplicate money movement.
 - QR data does not expose a wallet secret or grant financial authority.
 - Organizer settlement totals, attendee deposit/refund state, and public Explorer links agree with confirmed chain state.
@@ -236,7 +235,7 @@ The MVP is complete only when all of the following hold:
 
 ## Post-hackathon roadmap (not MVP blockers)
 
-1. **Product hardening:** independent security review, mainnet readiness, robust refund recovery, improved wallet onboarding, mature dispute resolution, organizer teams/permissions, notifications, and production monitoring.
+1. **Product hardening:** independent security review, mainnet readiness, robust refund recovery, improved wallet onboarding, attendance correction and refund support, organizer teams/permissions, notifications, and production monitoring.
 2. **Platform independence:** event-platform integrations, public API, embeddable commitment widgets, webhooks, and partnerships.
 3. **Cross-chain access:** Aurora Intents and additional supported funding assets/wallet experiences.
 4. **Commitment infrastructure:** expand to adjacent reservation use cases only after evidence of demand.

@@ -21,7 +21,7 @@ import {
   loadEventRegistrations,
   loadRegistrationHistory,
   parseCredential,
-  resolveDisputeInstruction,
+  refundNoShowInstruction,
   withdrawEligibleFundsInstructions,
   type EventAccount,
   type NewEventInput,
@@ -302,8 +302,6 @@ export function OrganizerView({
         cancellationDeadline: toTimestamp(form.get("cancellationDeadline")),
         checkInStartAt: toTimestamp(form.get("checkInStartAt")),
         checkInEndAt: toTimestamp(form.get("checkInEndAt")),
-        disputeWindowSeconds:
-          BigInt(Number(form.get("disputeHours")) || 0) * 3600n,
       };
       const { instruction, eventAddress } = await createEventInstruction(
         client,
@@ -313,7 +311,7 @@ export function OrganizerView({
       );
       await approval.prepare(
         "Publish this event?",
-        `Create "${input.name}" on Solana Devnet. The event will accept ${formatUsdc(input.depositAmount)} USDC per reservation, with ${input.capacity} places. If a no-show is recorded, attendees may dispute it for ${Number(input.disputeWindowSeconds / 3600n)} hours; an undisputed deposit is then paid to the event organizer. Fee payer: your connected wallet.`,
+        `Create "${input.name}" on Solana Devnet. The event will accept ${formatUsdc(input.depositAmount)} USDC per reservation, with ${input.capacity} places. Attendees who miss the event forfeit the deposit to the organizer unless the organizer chooses to refund them. Fee payer: your connected wallet.`,
         [instruction],
         () => {
           setCreatedEventAddress(eventAddress);
@@ -353,14 +351,14 @@ export function OrganizerView({
     }
   }
 
-  async function resolveDispute(event: EventAccount, registration: RegistrationAccount) {
+  async function refundNoShow(event: EventAccount, registration: RegistrationAccount) {
     if (!wallet) {
-      setManagementError("Connect the event organizer wallet to resolve a dispute.");
+      setManagementError("Connect the event organizer wallet to refund this no-show.");
       return;
     }
     setManagementError(null);
     try {
-      const instruction = await resolveDisputeInstruction(
+      const instruction = await refundNoShowInstruction(
         getProgramAddress(),
         client,
         event,
@@ -368,14 +366,14 @@ export function OrganizerView({
         wallet.account.address as Address,
       );
       await approval.prepare(
-        "Resolve with a full attendee refund?",
-        `${formatUsdc(registration.depositAmount)} USDC will be returned to the attendee. This program only supports resolving disputes to a full refund.`,
+        "Refund this no-show?",
+        `${formatUsdc(registration.depositAmount)} USDC will be returned to the attendee. This organizer-authorized refund is final.`,
         instruction,
         refresh,
       );
     } catch (reason) {
       setManagementError(
-        reason instanceof Error ? reason.message : "Could not prepare dispute resolution.",
+        reason instanceof Error ? reason.message : "Could not prepare the no-show refund.",
       );
     }
   }
@@ -395,7 +393,7 @@ export function OrganizerView({
       );
       await approval.prepare(
         "Record this no-show?",
-        `Record the attendee as not checked in. This starts the ${Number(event.disputeWindowSeconds / 3600n)}-hour dispute window; if no dispute is filed, the deposit may then be paid to the event organizer.`,
+        `Record the attendee as not checked in after the event's check-in window. The attendee's ${formatUsdc(registration.depositAmount)} USDC deposit will be forfeited to you unless you choose to refund it.`,
         [instruction],
         refresh,
       );
@@ -421,8 +419,8 @@ export function OrganizerView({
         registration,
       );
       await approval.prepare(
-        "Pay undisputed no-show deposit to the organizer?",
-        `${formatUsdc(registration.depositAmount)} USDC will be transferred from this registration's escrow to the event organizer. The attendee's ${Number(event.disputeWindowSeconds / 3600n)}-hour dispute period has elapsed. This settlement is final.`,
+        "Pay no-show deposit to the organizer?",
+        `${formatUsdc(registration.depositAmount)} USDC will be transferred from this registration's escrow to you. This settlement is final.`,
         instructions,
         refresh,
       );
@@ -570,13 +568,9 @@ export function OrganizerView({
             Refundable deposit (USDC)
             <input name="depositAmount" type="number" min="0.01" max="1000" step="0.01" required placeholder="5.00" />
           </label>
-          <label className="form-field">
-            Dispute window (hours)
-            <input name="disputeHours" type="number" min={1} max={168} defaultValue={24} required />
-          </label>
           <div className="no-show-disclosure form-span">
             <strong>No-show policy</strong>
-            <p>After a no-show is recorded, attendees have the disclosed dispute window to challenge it. If undisputed, the deposit is paid to the event organizer; a disputed deposit remains locked until the organizer resolves it with a full attendee refund. Cancelling the event keeps all held deposits refundable.</p>
+            <p>An attendee who misses the event forfeits the deposit to the organizer. After recording a no-show, the organizer may either claim the deposit or choose to refund the attendee. Cancelling the event keeps all held deposits refundable.</p>
           </div>
           {formError && <p className="transaction-error form-span" role="alert">{formError}</p>}
           <div className="form-actions form-span">
@@ -662,7 +656,7 @@ export function OrganizerView({
                 <div><span>Refunded volume</span><strong>{formatUsdc(settlementTotal(registrations, "refunded"))} USDC</strong></div>
                 <div><span>Paid to organizer</span><strong>{registrations.filter((item) => item.settlementStatus === "paid_to_organizer").length}</strong></div>
                 <div><span>Organizer payout</span><strong>{formatUsdc(settlementTotal(registrations, "paid_to_organizer"))} USDC</strong></div>
-                <div><span>Disputed</span><strong>{registrations.filter((item) => item.attendanceStatus === "disputed" && item.settlementStatus === "held").length}</strong></div>
+                <div><span>No-show decisions</span><strong>{registrations.filter((item) => (item.attendanceStatus === "no_show_pending" || item.attendanceStatus === "disputed") && item.settlementStatus === "held").length}</strong></div>
               </div>
               <div className="managed-actions">
                 <button className="button-secondary" onClick={() => setSelectedEvent(event)} disabled={event.status !== "active"}>
@@ -676,7 +670,7 @@ export function OrganizerView({
                 )}
               </div>
               <section className="settlement-report" aria-label={`${event.name} settlement report`}>
-                <div className="dispute-row">
+                <div className="settlement-row">
                   <div>
                     <p className="eyebrow">SETTLEMENT REPORT</p>
                     <p>Current states come from Devnet; links open the related registration and recent transactions.</p>
@@ -697,7 +691,7 @@ export function OrganizerView({
                   <p className="transaction-error" role="alert">{reportError}</p>
                 )}
                 {settlementReports[event.address]?.map(({ registration, transactions }) => (
-                  <div className="dispute-row" key={registration.address}>
+                  <div className="settlement-row" key={registration.address}>
                     <span>
                       {registration.attendee.slice(0, 7)}…{registration.attendee.slice(-7)} ·{" "}
                       {formatUsdc(registration.depositAmount)} USDC ·{" "}
@@ -728,19 +722,6 @@ export function OrganizerView({
                   </div>
                 ))}
               </section>
-              {registrations.some((item) => item.attendanceStatus === "disputed" && item.settlementStatus === "held") && (
-                <div className="dispute-list">
-                  <p className="eyebrow">OPEN DISPUTES · REFUND ONLY</p>
-                  {registrations
-                    .filter((item) => item.attendanceStatus === "disputed" && item.settlementStatus === "held")
-                    .map((registration) => (
-                      <div className="dispute-row" key={registration.address}>
-                        <span>{registration.attendee.slice(0, 7)}…{registration.attendee.slice(-7)} · {formatUsdc(registration.depositAmount)} USDC</span>
-                        <button className="button-secondary" onClick={() => resolveDispute(event, registration)}>Resolve with full refund <span>→</span></button>
-                      </div>
-                    ))}
-                </div>
-              )}
               {event.status === "active" &&
                 nowSeconds > event.checkInEndAt &&
                 registrations.some((item) =>
@@ -748,8 +729,8 @@ export function OrganizerView({
                   item.attendanceStatus === "not_checked_in" &&
                   item.settlementStatus === "held",
                 ) && (
-                  <div className="dispute-list">
-                    <p className="eyebrow">CHECK-IN WINDOW CLOSED · RECORD NO-SHOWS TO START DISPUTE PERIODS</p>
+                  <div className="no-show-list">
+                    <p className="eyebrow">CHECK-IN WINDOW CLOSED · RECORD MISSED ATTENDEES</p>
                     {registrations
                       .filter((item) =>
                         item.reservationStatus === "confirmed" &&
@@ -757,7 +738,7 @@ export function OrganizerView({
                         item.settlementStatus === "held",
                       )
                       .map((registration) => (
-                        <div className="dispute-row" key={registration.address}>
+                        <div className="settlement-row" key={registration.address}>
                           <span>{registration.attendee.slice(0, 7)}…{registration.attendee.slice(-7)} · {formatUsdc(registration.depositAmount)} USDC</span>
                           <button className="button-secondary" onClick={() => finalizeNoShow(event, registration)}>Record no-show <span>!</span></button>
                         </div>
@@ -766,40 +747,26 @@ export function OrganizerView({
                 )}
               {event.status === "active" &&
                 registrations.some((item) =>
-                  item.attendanceStatus === "no_show_pending" &&
+                  (item.attendanceStatus === "no_show_pending" ||
+                    item.attendanceStatus === "disputed") &&
                   item.settlementStatus === "held",
                 ) && (
-                  <div className="dispute-list">
-                    <p className="eyebrow">NO-SHOW DISPUTE WINDOWS</p>
-                    {registrations
-                      .filter((item) =>
-                        item.attendanceStatus === "no_show_pending" &&
-                        item.settlementStatus === "held",
-                      )
-                      .map((registration) => {
-                        const disputeDeadline =
-                          registration.noShowMarkedAt + event.disputeWindowSeconds;
-                        const canSettleNoShow = nowSeconds > disputeDeadline;
-                        return (
-                          <div className="dispute-row" key={registration.address}>
-                            <span>
-                              {registration.attendee.slice(0, 7)}…{registration.attendee.slice(-7)} · {formatUsdc(registration.depositAmount)} USDC ·{" "}
-                              {canSettleNoShow
-                                ? "Dispute period ended"
-                                : `Dispute by ${new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: event.timeZone }).format(new Date(Number(disputeDeadline) * 1000))}`}
-                            </span>
-                            {canSettleNoShow && (
-                              <button
-                                className="button-secondary"
-                                onClick={() => settleNoShow(event, registration)}
-                              >
-                                Pay organizer <span>→</span>
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                  </div>
+                <div className="no-show-list">
+                  <p className="eyebrow">NO-SHOW · REFUND OR PAYOUT</p>
+                  {registrations
+                    .filter((item) =>
+                      (item.attendanceStatus === "no_show_pending" ||
+                        item.attendanceStatus === "disputed") &&
+                      item.settlementStatus === "held",
+                    )
+                    .map((registration) => (
+                        <div className="settlement-row" key={registration.address}>
+                          <span>{registration.attendee.slice(0, 7)}…{registration.attendee.slice(-7)} · {formatUsdc(registration.depositAmount)} USDC · No-show recorded</span>
+                          <button className="button-secondary" onClick={() => refundNoShow(event, registration)}>Refund attendee <span>↻</span></button>
+                          <button className="button-primary" onClick={() => settleNoShow(event, registration)}>Pay organizer <span>→</span></button>
+                        </div>
+                      ))}
+                </div>
                 )}
               {selectedEvent?.address === event.address && (
                 <div className="checkin-panel">

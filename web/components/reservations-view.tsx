@@ -8,7 +8,6 @@ import { useEffect, useState } from "react";
 import type { AppClient } from "@/components/providers";
 import {
   cancelRegistrationInstruction,
-  disputeInstruction,
   formatUsdc,
   getProgramAddress,
   isHeldConfigured,
@@ -35,8 +34,7 @@ function statusLabel(registration: RegistrationAccount) {
   if (registration.settlementStatus === "paid_to_organizer") return "NO-SHOW · PAID TO ORGANIZER";
   if (registration.settlementStatus === "refunded") return "REFUNDED";
   if (registration.attendanceStatus === "checked_in") return "ATTENDED · REFUND PENDING";
-  if (registration.attendanceStatus === "no_show_pending") return "NO-SHOW · DISPUTE WINDOW";
-  if (registration.attendanceStatus === "disputed") return "DISPUTED · FUNDS LOCKED";
+  if (registration.attendanceStatus === "no_show_pending" || registration.attendanceStatus === "disputed") return "NO-SHOW · ORGANIZER DECISION";
   if (registration.reservationStatus === "cancelled") return "CANCELLED";
   return "PLACE CONFIRMED";
 }
@@ -173,27 +171,6 @@ export function ReservationsView({
     }
   }
 
-  async function dispute(reservation: Pick<Reservation, "registration" | "event">) {
-    if (!wallet) return;
-    try {
-      const instruction = await disputeInstruction(
-        getProgramAddress(),
-        reservation.event,
-        wallet.account.address as Address,
-      );
-      await approval.prepare(
-        "Dispute this no-show record?",
-        `Keep ${formatUsdc(reservation.registration.depositAmount)} USDC locked while the organizer reviews your attendance dispute. The only resolution currently supported is a full refund to you.`,
-        [instruction],
-        refresh,
-      );
-    } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "Could not prepare this dispute.",
-      );
-    }
-  }
-
   return (
     <section className="reservations-layout">
       <div className="section-heading compact">
@@ -237,11 +214,6 @@ export function ReservationsView({
             registration.settlementStatus === "held" &&
             (event.status === "cancelled" ||
               registration.attendanceStatus === "checked_in");
-          const canDispute =
-            registration.settlementStatus === "held" &&
-            registration.attendanceStatus === "no_show_pending" &&
-            nowSeconds <=
-              registration.noShowMarkedAt + event.disputeWindowSeconds;
           const qrPayload =
             `HELD1|${event.address}|${registration.attendee}|${registration.address}`;
           return (
@@ -313,26 +285,16 @@ export function ReservationsView({
                       Claim full refund <span>→</span>
                     </button>
                   )}
-                  {canDispute && (
-                    <button className="button-secondary" onClick={() => dispute({ registration, event })}>
-                      Dispute no-show <span>!</span>
-                    </button>
-                  )}
                   {registration.settlementStatus === "refunded" && (
                     <span className="refund-complete">✓ Full refund confirmed on-chain</span>
                   )}
-                  {registration.attendanceStatus === "no_show_pending" && (
+                  {(registration.attendanceStatus === "no_show_pending" ||
+                    registration.attendanceStatus === "disputed") && (
                     <p className="locked-note">
                       {registration.settlementStatus === "paid_to_organizer"
-                        ? "The dispute period ended without a dispute; the deposit was paid to the event organizer."
-                        : `Funds remain locked. ${canDispute ? "Dispute by" : "The dispute window ended"}`}{" "}
-                      {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: event.timeZone }).format(
-                        new Date(Number(registration.noShowMarkedAt + event.disputeWindowSeconds) * 1000),
-                      )}. {registration.settlementStatus === "held" && "Undisputed deposits are paid to the event organizer."}
+                        ? "The no-show deposit was paid to the event organizer."
+                        : "The organizer recorded a no-show. They may either pay the deposit to themselves or choose to refund you."}
                     </p>
-                  )}
-                  {registration.attendanceStatus === "disputed" && (
-                    <p className="locked-note">Your deposit remains locked until the organizer resolves the dispute to a refund.</p>
                   )}
                 </div>
               </div>

@@ -49,12 +49,9 @@ pub mod held {
         require!(
             registration_open_at <= cancellation_deadline
                 && cancellation_deadline <= check_in_start_at
-                && dispute_window_seconds > 0,
+                && dispute_window_seconds == 0,
             HeldError::InvalidEventSchedule
         );
-        check_in_end_at
-            .checked_add(dispute_window_seconds)
-            .ok_or(HeldError::ArithmeticOverflow)?;
 
         let event = &mut ctx.accounts.event;
         event.organizer = ctx.accounts.organizer.key();
@@ -287,36 +284,16 @@ pub mod held {
         Ok(())
     }
 
-    pub fn dispute_registration(ctx: Context<DisputeRegistration>) -> Result<()> {
-        let now = Clock::get()?.unix_timestamp;
-        let event = &ctx.accounts.event;
-        let registration = &mut ctx.accounts.registration;
-        let dispute_deadline = registration
-            .no_show_marked_at
-            .checked_add(event.dispute_window_seconds)
-            .ok_or(HeldError::ArithmeticOverflow)?;
-        ensure_can_dispute(
-            now,
-            dispute_deadline,
-            registration.attendance_status,
-            registration.settlement_status,
-        )?;
-        registration.attendance_status = AttendanceStatus::Disputed;
-        emit!(DisputeRaised {
-            event: event.key(),
-            registration: registration.key(),
-            attendee: ctx.accounts.attendee.key(),
-            timestamp: now,
-        });
-        Ok(())
+    pub fn dispute_registration(_ctx: Context<DisputeRegistration>) -> Result<()> {
+        err!(HeldError::DisputeNotSupported)
     }
 
-    pub fn resolve_dispute(ctx: Context<ResolveDispute>) -> Result<()> {
-        require!(
-            ctx.accounts.registration.attendance_status == AttendanceStatus::Disputed
-                && ctx.accounts.registration.settlement_status == SettlementStatus::Held,
-            HeldError::InvalidTransition
-        );
+    pub fn refund_no_show(ctx: Context<RefundNoShow>) -> Result<()> {
+        ensure_can_refund_no_show(
+            ctx.accounts.registration.reservation_status,
+            ctx.accounts.registration.attendance_status,
+            ctx.accounts.registration.settlement_status,
+        )?;
         transfer_from_vault(
             &ctx.accounts.event,
             &ctx.accounts.registration,
@@ -351,24 +328,13 @@ pub mod held {
         emit!(NoShowMarked {
             event: ctx.accounts.event.key(),
             registration: ctx.accounts.registration.key(),
-            dispute_deadline: now
-                .checked_add(ctx.accounts.event.dispute_window_seconds)
-                .ok_or(HeldError::ArithmeticOverflow)?,
+            no_show_marked_at: now,
         });
         Ok(())
     }
 
     pub fn withdraw_eligible_funds(ctx: Context<WithdrawEligibleFunds>) -> Result<()> {
-        let now = Clock::get()?.unix_timestamp;
-        let dispute_deadline = ctx
-            .accounts
-            .registration
-            .no_show_marked_at
-            .checked_add(ctx.accounts.event.dispute_window_seconds)
-            .ok_or(HeldError::ArithmeticOverflow)?;
         ensure_can_withdraw_no_show(
-            now,
-            dispute_deadline,
             ctx.accounts.event.status,
             ctx.accounts.registration.reservation_status,
             ctx.accounts.registration.attendance_status,
@@ -496,15 +462,17 @@ fn ensure_can_refund(
     Ok(())
 }
 
-fn ensure_can_dispute(
-    now: i64,
-    deadline: i64,
+fn ensure_can_refund_no_show(
+    reservation_status: ReservationStatus,
     attendance_status: AttendanceStatus,
     settlement_status: SettlementStatus,
 ) -> Result<()> {
-    require!(now <= deadline, HeldError::DisputeWindowClosed);
     require!(
-        attendance_status == AttendanceStatus::NoShowPending
+        reservation_status == ReservationStatus::Confirmed
+            && matches!(
+                attendance_status,
+                AttendanceStatus::NoShowPending | AttendanceStatus::Disputed
+            )
             && settlement_status == SettlementStatus::Held,
         HeldError::InvalidTransition
     );
@@ -512,8 +480,6 @@ fn ensure_can_dispute(
 }
 
 fn ensure_can_withdraw_no_show(
-    now: i64,
-    dispute_deadline: i64,
     event_status: EventStatus,
     reservation_status: ReservationStatus,
     attendance_status: AttendanceStatus,
@@ -523,7 +489,6 @@ fn ensure_can_withdraw_no_show(
         event_status == EventStatus::Active,
         HeldError::EventNotActive
     );
-    require!(now > dispute_deadline, HeldError::DisputeWindowOpen);
     require!(
         reservation_status == ReservationStatus::Confirmed
             && attendance_status == AttendanceStatus::NoShowPending
@@ -791,7 +756,7 @@ pub struct DisputeRegistration<'info> {
 }
 
 #[derive(Accounts)]
-pub struct ResolveDispute<'info> {
+pub struct RefundNoShow<'info> {
     pub organizer: Signer<'info>,
     #[account(
         mut,
@@ -830,9 +795,10 @@ pub struct ResolveDispute<'info> {
 
 #[derive(Accounts)]
 pub struct FinalizeNoShow<'info> {
-    pub caller: Signer<'info>,
+    pub organizer: Signer<'info>,
     #[account(
-        seeds = [EVENT_SEED, event.organizer.as_ref(), event.event_seed.as_ref()],
+        has_one = organizer @ HeldError::Unauthorized,
+        seeds = [EVENT_SEED, organizer.key().as_ref(), event.event_seed.as_ref()],
         bump = event.bump
     )]
     pub event: Account<'info, Event>,
@@ -1007,7 +973,7 @@ pub struct EventCancelled {
 pub struct NoShowMarked {
     pub event: Pubkey,
     pub registration: Pubkey,
-    pub dispute_deadline: i64,
+    pub no_show_marked_at: i64,
 }
 
 #[event]
@@ -1062,10 +1028,8 @@ pub enum HeldError {
     InvalidBeneficiary,
     #[msg("The mint is not owned by the configured SPL Token program")]
     InvalidTokenProgram,
-    #[msg("The attendee dispute period has closed")]
-    DisputeWindowClosed,
-    #[msg("The attendee dispute period is still open")]
-    DisputeWindowOpen,
+    #[msg("Attendee disputes are not supported; contact the event organizer")]
+    DisputeNotSupported,
 }
 
 #[cfg(test)]
@@ -1189,26 +1153,14 @@ mod tests {
     }
 
     #[test]
-    fn dispute_and_no_show_transitions_enforce_deadlines() {
-        assert!(ensure_can_dispute(
-            100,
-            100,
-            AttendanceStatus::NoShowPending,
-            SettlementStatus::Held,
-        )
-        .is_ok());
-        assert!(ensure_can_dispute(
-            101,
-            100,
+    fn no_show_requires_closed_check_in_and_attendee_refund_is_not_available() {
+        assert!(ensure_can_refund(
+            EventStatus::Active,
+            ReservationStatus::Confirmed,
             AttendanceStatus::NoShowPending,
             SettlementStatus::Held,
         )
         .is_err());
-        assert!(
-            ensure_can_dispute(99, 100, AttendanceStatus::CheckedIn, SettlementStatus::Held,)
-                .is_err()
-        );
-
         assert!(ensure_can_finalize_no_show(
             21,
             20,
@@ -1239,10 +1191,33 @@ mod tests {
     }
 
     #[test]
-    fn no_show_settlement_pays_only_after_the_dispute_window() {
+    fn organizer_may_refund_a_no_show_or_pay_it_out_immediately() {
+        assert!(ensure_can_refund_no_show(
+            ReservationStatus::Confirmed,
+            AttendanceStatus::NoShowPending,
+            SettlementStatus::Held,
+        )
+        .is_ok());
+        assert!(ensure_can_refund_no_show(
+            ReservationStatus::Confirmed,
+            AttendanceStatus::Disputed,
+            SettlementStatus::Held,
+        )
+        .is_ok());
+        assert!(ensure_can_refund_no_show(
+            ReservationStatus::Cancelled,
+            AttendanceStatus::NoShowPending,
+            SettlementStatus::Held,
+        )
+        .is_err());
+        assert!(ensure_can_refund_no_show(
+            ReservationStatus::Confirmed,
+            AttendanceStatus::NoShowPending,
+            SettlementStatus::PaidToOrganizer,
+        )
+        .is_err());
+
         assert!(ensure_can_withdraw_no_show(
-            101,
-            100,
             EventStatus::Active,
             ReservationStatus::Confirmed,
             AttendanceStatus::NoShowPending,
@@ -1250,17 +1225,6 @@ mod tests {
         )
         .is_ok());
         assert!(ensure_can_withdraw_no_show(
-            100,
-            100,
-            EventStatus::Active,
-            ReservationStatus::Confirmed,
-            AttendanceStatus::NoShowPending,
-            SettlementStatus::Held,
-        )
-        .is_err());
-        assert!(ensure_can_withdraw_no_show(
-            101,
-            100,
             EventStatus::Cancelled,
             ReservationStatus::Confirmed,
             AttendanceStatus::NoShowPending,
@@ -1268,8 +1232,6 @@ mod tests {
         )
         .is_err());
         assert!(ensure_can_withdraw_no_show(
-            101,
-            100,
             EventStatus::Active,
             ReservationStatus::Confirmed,
             AttendanceStatus::Disputed,
@@ -1277,8 +1239,6 @@ mod tests {
         )
         .is_err());
         assert!(ensure_can_withdraw_no_show(
-            101,
-            100,
             EventStatus::Active,
             ReservationStatus::Confirmed,
             AttendanceStatus::NoShowPending,

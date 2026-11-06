@@ -25,8 +25,6 @@ const notificationSchema = z.object({
   event_name: z.string(),
   event_start_at: z.union([z.string(), z.number()]),
   event_time_zone: z.string(),
-  dispute_window_seconds: z.union([z.string(), z.number()]),
-  no_show_marked_at: z.union([z.string(), z.number()]),
   deposit_amount: z.union([z.string(), z.number()]),
   attendee_wallet: z.string(),
   organizer_wallet: z.string(),
@@ -70,11 +68,11 @@ function notificationContent(
     },
     no_show_recorded: {
       subject: "A no-show was recorded for your HELD event",
-      message: `A no-show was recorded for ${notification.event_name}. Your ${Number(notification.dispute_window_seconds) / 3600} hour dispute period is now open. It ends ${new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: notification.event_time_zone }).format(new Date((Number(notification.no_show_marked_at) + Number(notification.dispute_window_seconds)) * 1000))}.`,
+      message: `The organizer recorded a no-show for ${notification.event_name}. Your deposit is now eligible to be paid to the organizer, who may instead choose to issue you a full refund. Contact the organizer directly if you believe the record is incorrect.`,
     },
     no_show_settled: {
-      subject: "Your HELD no-show dispute period ended",
-      message: `No dispute was recorded for ${notification.event_name}; the ${amount} deposit was paid to the event organizer after the disclosed dispute window.`,
+      subject: "Your HELD no-show deposit was paid to the organizer",
+      message: `The ${amount} deposit for ${notification.event_name} was paid to the event organizer after a no-show was recorded.`,
     },
     event_reminder: {
       subject: `Reminder: ${notification.event_name}`,
