@@ -33,6 +33,8 @@ vercel deploy --prod --project heldevents --yes --verify
 
 The project is configured for Node.js 24 and the public Devnet program, USDC mint, and RPC endpoint. The local `.env.local` and generated build files are excluded from deployment. Server-only Neon and Object Storage credentials, plus optional notification/email settings, must be configured in Vercel before their corresponding API routes can operate; do not commit or upload local secret files.
 
+The production deployment is live at [https://heldevents.vercel.app](https://heldevents.vercel.app). Its public page was verified to return HTTP 200. Only the public Devnet settings are configured in Vercel; Neon database, Realtime, Object Storage, and notification/email credentials were not uploaded, so the server features that depend on them remain unconfigured.
+
 ## Solana program
 
 The configured HELD program ID is `6eCgrBQEMM3oo4AgvvvXwiEkd7zFKVQF983HwpwCZLDU`, and the Anchor provider targets Devnet. The repository provides `anchor-docker.ps1` to run the pinned Anchor 0.32.1 toolchain through Docker Desktop:
