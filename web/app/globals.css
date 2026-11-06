@@ -129,6 +129,10 @@ button:disabled { cursor: not-allowed; opacity: .46; }
 }
 .wallet-menu .eyebrow { margin: 0 0 12px; }
 .wallet-empty, .wallet-footnote { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.wallet-support-note { margin: 12px 0 0; }
+.wallet-install-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 11px; }
+.wallet-install-links a { border: 1px solid var(--line); border-radius: 2px; padding: 8px 4px; color: #d7d9ca; font-size: 9px; text-align: center; text-decoration: none; }
+.wallet-install-links a:hover { border-color: var(--green); color: var(--green); }
 .wallet-footnote { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
 .wallet-option {
   display: flex;

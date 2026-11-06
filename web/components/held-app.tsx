@@ -37,6 +37,12 @@ const eventPreview = {
   deposit: "$5.00",
 };
 
+const supportedWallets = [
+  { name: "Phantom", url: "https://phantom.app/download" },
+  { name: "Solflare", url: "https://solflare.com/download" },
+  { name: "Backpack", url: "https://backpack.app/download" },
+];
+
 function WalletControl() {
   const client = useClient<AppClient>();
   const wallets = useWallets(client);
@@ -44,6 +50,15 @@ function WalletControl() {
   const { dispatch: connect, isRunning, error } = useConnect(client);
   const { dispatch: disconnect } = useDisconnect(client);
   const [open, setOpen] = useState(false);
+  const sortedWallets = [...wallets].sort((left, right) => {
+    const priority = (name: string) => {
+      const index = supportedWallets.findIndex((wallet) =>
+        name.toLowerCase().includes(wallet.name.toLowerCase()),
+      );
+      return index === -1 ? supportedWallets.length : index;
+    };
+    return priority(left.name) - priority(right.name);
+  });
 
   if (connected) {
     const address = connected.account.address;
@@ -74,11 +89,18 @@ function WalletControl() {
         <div className="wallet-menu">
           <p className="eyebrow">SOLANA DEVNET</p>
           {wallets.length === 0 ? (
-            <p className="wallet-empty">
-              No compatible wallet found. Install a Wallet Standard wallet to continue.
-            </p>
+            <>
+              <p className="wallet-empty">No wallet detected in this browser. Install Phantom, Solflare or Backpack, then refresh.</p>
+              <div className="wallet-install-links">
+                {supportedWallets.map((wallet) => (
+                  <a key={wallet.name} href={wallet.url} target="_blank" rel="noreferrer">
+                    Get {wallet.name} ↗
+                  </a>
+                ))}
+              </div>
+            </>
           ) : (
-            wallets.map((wallet) => (
+            sortedWallets.map((wallet) => (
               <button
                 className="wallet-option"
                 key={wallet.name}
@@ -91,6 +113,11 @@ function WalletControl() {
                 <span aria-hidden="true">→</span>
               </button>
             ))
+          )}
+          {wallets.length > 0 && (
+            <p className="wallet-empty wallet-support-note">
+              Phantom, Solflare and Backpack are supported when installed in this browser.
+            </p>
           )}
           {error instanceof Error && (
             <p className="inline-error">{error.message}</p>
